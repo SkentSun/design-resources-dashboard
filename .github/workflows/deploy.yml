@@ -37,13 +37,9 @@ jobs:
       - name: Refresh data (fetch from all sources)
         run: python refresh_lib.py
 
-      - name: Commit refreshed HTML back to repo
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add design-resources-dashboard.html
-          git commit -m "chore: auto-refresh dashboard $(date -u +%Y-%m-%dT%H:%M:%SZ)" || echo "no changes"
-          git push
+      # 注意：不把刷新后的 HTML 提交回仓库。
+      # 工作流只需在本地重新生成 HTML，并作为 Pages 产物上传部署即可；
+      # 回写仓库会触发额外 push（非快进冲突 + 出口代理限制），且无必要。
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
