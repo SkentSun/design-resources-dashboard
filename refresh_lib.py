@@ -4,9 +4,9 @@
 import re, json, os, sys, html as ihtml, datetime, concurrent.futures, urllib.request, urllib.parse, urllib.error
 from collections import Counter
 
-WS = "/Users/sunjian/WorkBuddy/2026-08-15-10-18-44"
+WS = os.path.dirname(os.path.abspath(__file__))
 DASH = os.path.join(WS, "design-resources-dashboard.html")
-SITEMAP_CACHE = "/tmp/scrape/posts_sitemap.xml"
+SITEMAP_CACHE = os.path.join(WS, ".cache", "posts_sitemap.xml")
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"}
 
 SUPABASE = "https://tuzpqmdnxvlzwqthgseg.supabase.co"
