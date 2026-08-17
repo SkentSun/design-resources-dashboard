@@ -432,7 +432,7 @@ function toast(msg, ms=3200){
     // 云端静态托管（GitHub Pages 等）：无后端，改为提示自动更新机制
     const isLocal = ['localhost','127.0.0.1','[::1]'].includes(location.hostname);
     if(!isLocal){
-      toast('☁ 云端为静态托管，由 GitHub Actions 每日 UTC 18:00 自动刷新；如需立即更新，请到仓库 Actions 页手动 Run workflow');
+      toast('☁ 云端为静态托管，由 GitHub Actions 每 6 小时 (UTC) 自动刷新；如需立即更新，请到仓库 Actions 页手动 Run workflow');
       btn.disabled=false; btn.classList.remove('spin'); label.textContent=old; return;
     }
     try{
