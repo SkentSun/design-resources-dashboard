@@ -12,6 +12,7 @@ on:
     paths:
       - 'refresh_lib.py'
       - 'design-resources-dashboard.html'
+      - 'logo.png'
       - '.github/workflows/deploy.yml'
 
 permissions:
