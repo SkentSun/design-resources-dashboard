@@ -1,11 +1,11 @@
 name: Refresh & Deploy Dashboard
 
 # 触发方式：
-#   1) 每日 UTC 18:00 自动跑（≈ 北京时间 02:00），抓取最新内容并部署
+#   1) 每 6 小时自动跑（UTC 0/6/12/18 点 ≈ 北京时间 08/14/20/02 点），抓取最新内容并部署
 #   2) 在 GitHub 仓库 Actions 页手动点 "Run workflow" 立即触发（替代本地"采集"按钮）
 on:
   schedule:
-    - cron: '0 18 * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch: {}
   push:
     branches: [main]
