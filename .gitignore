@@ -1,0 +1,10 @@
+# 部署到 GitHub Pages 只需以下文件，其余为本地/无关素材，不入仓
+.workbuddy/
+__pycache__/
+.DS_Store
+media/
+*.md
+今日设计现场*
+公众号*
+design-resources-hub.html
+style-dna-design.md

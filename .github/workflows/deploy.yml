@@ -1,0 +1,58 @@
+name: Refresh & Deploy Dashboard
+
+# 触发方式：
+#   1) 每日 UTC 18:00 自动跑（≈ 北京时间 02:00），抓取最新内容并部署
+#   2) 在 GitHub 仓库 Actions 页手动点 "Run workflow" 立即触发（替代本地"采集"按钮）
+on:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - 'refresh_lib.py'
+      - 'design-resources-dashboard.html'
+      - '.github/workflows/deploy.yml'
+
+permissions:
+  contents: write      # 把刷新后的 HTML 提交回仓库（用 GITHUB_TOKEN，不会触发新工作流，无死循环）
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Refresh data (fetch from all sources)
+        run: python refresh_lib.py
+
+      - name: Commit refreshed HTML back to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add design-resources-dashboard.html
+          git commit -m "chore: auto-refresh dashboard $(date -u +%Y-%m-%dT%H:%M:%SZ)" || echo "no changes"
+          git push
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
