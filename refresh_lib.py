@@ -239,6 +239,55 @@ def fetch_motionsites():
         items.append(it)
     return items
 
+# ---------- recent.design (sitemap 近期 + 详情页取本条目 mp4/poster) ----------
+def _pick_recent_video(videos):
+    best=None; bw=0
+    for v in videos:
+        m=re.search(r'/0/(\d+)x(\d+)\.mp4', v)
+        if not m: continue
+        w=int(m.group(1))
+        if w>=360 and (best is None or abs(w-960)<abs(bw-960)):
+            best=v; bw=w
+    return best
+
+def fetch_recent(recent_days=30, cap=120):
+    try:
+        sm=fetch_url("https://recent.design/sitemap.xml", timeout=30)
+    except Exception as e:
+        print("recent sitemap err", e); return []
+    pairs=re.findall(r'<url>\s*<loc>([^<]+)</loc>\s*<lastmod>([^<]+)</lastmod>', sm)
+    cutoff=(TODAY-datetime.timedelta(days=recent_days)).isoformat()[:10]
+    urls=[(loc, lm[:10]) for loc, lm in pairs if lm[:10]>=cutoff]
+    urls.sort(key=lambda x: x[1], reverse=True)
+    urls=urls[:cap]
+    def fetch_one(loc_date):
+        loc, d = loc_date
+        try: h=fetch_url(loc, timeout=25)
+        except Exception: return None
+        sid=loc.rstrip('/').split('/')[-1].split('-')[0]
+        tm=re.search(r'property="og:title"\s+content="([^"]*)"', h)
+        title=ihtml.unescape(tm.group(1)) if tm else loc.split('/')[-1]
+        title=re.sub(r'\s*[—-]\s*Recent$', '', title).strip()
+        own=[v for v in re.findall(r'https?://[^\s"\'<>]+\.mp4', h) if f'/items/{sid}/' in v]
+        video=_pick_recent_video(own)
+        im=re.search(r'property="og:image"\s+content="([^"]*)"', h)
+        image=im.group(1) if im else ""
+        it={
+            "site":"recent.design","siteUrl":"https://recent.design","source":[],
+            "title":title,"author":"Recent","video":video or "",
+            "image":(image if not video else ""),
+            "link":loc,
+            "detail":{"kind":"","tags":[],"text":title,"meta":[["Source","recent.design"],["Date",d]],"md":""},
+            "ts":None,"uid":loc,"fetched":TODAY.isoformat(),
+        }
+        it["cats"]=classify(it)
+        return it
+    out=[]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as ex:
+        for r in ex.map(fetch_one, urls):
+            if r: out.append(r)
+    return out
+
 # ---------- 读取现有 HTML 的 others（保留） ----------
 def load_others():
     s=open(DASH,encoding="utf-8").read()
@@ -256,7 +305,7 @@ def load_others():
                 if depth==0: j+=1;break
         j+=1
     data=json.loads(s[k:j])
-    LIVE=("bestdesignsonx","styles.refero","posts.design","motionsites")
+    LIVE=("bestdesignsonx","styles.refero","posts.design","motionsites","recent.design")
     existing={site:[] for site in LIVE}  # 兜底：保留文件内同站已有数据
     others=[]
     for it in data:
@@ -285,16 +334,18 @@ def run_refresh(days=None, auto_expand=True):
     log.append(f"posts {len(posts)} 条")
     motionsites=fetch_motionsites()
     log.append(f"motionsites {len(motionsites)} 条")
+    recents=fetch_recent()
+    log.append(f"recents {len(recents)} 条")
     s,k,j,others,existing=load_others()
     log.append(f"others 保留 {len(others)} 条")
 
     # 安全回退：某源抓空时，保留文件里同站的已有数据，绝不留白
-    fresh={"bestdesignsonx":bdx,"styles.refero":refero,"posts.design":posts,"motionsites":motionsites}
+    fresh={"bestdesignsonx":bdx,"styles.refero":refero,"posts.design":posts,"motionsites":motionsites,"recent.design":recents}
     for site in fresh:
         if not fresh[site] and existing.get(site):
             log.append(f"⚠ {site} 抓取为空，回退保留文件中 {len(existing[site])} 条")
             fresh[site]=existing[site]
-    merged=others+fresh["bestdesignsonx"]+fresh["styles.refero"]+fresh["posts.design"]+fresh["motionsites"]
+    merged=others+fresh["bestdesignsonx"]+fresh["styles.refero"]+fresh["posts.design"]+fresh["motionsites"]+fresh["recent.design"]
     u=set();final=[]
     for it in merged:
         if it.get("uid") in u: continue
