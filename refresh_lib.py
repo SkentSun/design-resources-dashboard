@@ -493,6 +493,10 @@ def load_others():
         if st in existing:
             existing[st].append(it)
         else:
+            # 清理：无媒体（既无 image 也无 video）的 legacy 文本/链接残留不保留，
+            # 避免瀑布流出现空白卡片；这些站点现已有自动源覆盖。
+            if not (it.get("image") or it.get("video")):
+                continue
             it["fetched"]=TODAY.isoformat()  # 刷新抓取日
             others.append(it)
     return s,k,j,others,existing
