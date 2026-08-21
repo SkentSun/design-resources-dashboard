@@ -46,7 +46,9 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Provide index.html at site root
-        run: cp design-resources-dashboard.html index.html
+        # 双向同步，确保根路径(index.html)与文件名路径(design-resources-dashboard.html)内容一致，
+        # 避免访问带文件名的 URL 时命中旧版本。
+        run: cp design-resources-dashboard.html index.html && cp index.html design-resources-dashboard.html
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
