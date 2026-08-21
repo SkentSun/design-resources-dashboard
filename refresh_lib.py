@@ -32,7 +32,9 @@ RULES = {
     "Animation":[r"\banimation",r"\bmotion\b",r"\binteraction",r"\bmorph",r"\bshader",r"\btransition",r"\bhover\b",r"\bswipe",r"\bspring\b",r"\bbento\b",r"\bstoryboard",r"\bloop",r"\bparallax",r"\bkinetic",r"\bgif\b",r"\brotation"],
 }
 CAP = 4
-SITE_MAP = {"navbar":["Component"],"cta":["Component"],"supahero":["Landing"]}
+SITE_MAP = {"navbar":["Component"],"cta":["Component"],"supahero":["Landing"],
+  "landing.love":["Landing","Web"],"saaspo.com":["Landing","Web"],"rebrand.gallery":["Branding"],
+  "navbar.gallery":["Component","UI / Interface"],"cta.gallery":["Component","UI / Interface"],"curated.design":["Web"]}
 def classify(it):
     d = it.get("detail") or {}
     parts = [it.get("title",""), it.get("author","")] + (it.get("source") or [])
@@ -288,6 +290,183 @@ def fetch_recent(recent_days=30, cap=120):
             if r: out.append(r)
     return out
 
+# ---------- 6 个新源：landing.love / saaspo.com / rebrand.gallery / navbar.gallery / cta.gallery / curated.design ----------
+def _og(h, prop):
+    ms = re.findall(r'<meta[^>]+property=["\']og:%s["\'][^>]*content=["\']([^"\']*)["\']' % re.escape(prop), h)
+    if not ms:
+        ms = re.findall(r'<meta[^>]+content=["\']([^"\']*)["\'][^>]*property=["\']og:%s["\']' % re.escape(prop), h)
+    return ihtml.unescape(ms[0]) if ms else ""
+
+def _page_title(h, default=""):
+    t = _og(h, "title")
+    if t: return t
+    m = re.search(r'<title>([^<]*)</title>', h)
+    return ihtml.unescape(m.group(1)) if m else default
+
+def _clean_title(raw, suffixes):
+    t = (raw or "").strip()
+    for s in suffixes:
+        t = re.sub(r'\s*' + re.escape(s) + r'\s*$', '', t).strip()
+    return t or (raw or "")
+
+def _mp4(h, slug=None, domain=None):
+    vids = re.findall(r'https?://[^"\'\s<>]+\.mp4', h)
+    cand = list(vids)
+    if slug:
+        sc = [v for v in vids if slug in v and "-preview" not in v and "thumb" not in v.lower()]
+        if sc: cand = sc
+    if domain:
+        dc = [v for v in cand if re.search(domain, v) and "-preview" not in v and "thumb" not in v.lower()]
+        if dc: cand = dc
+    return cand[0] if cand else ""
+
+def _sitemap_entries(url, pat=None):
+    try:
+        sm = fetch_url(url, timeout=30)
+    except Exception:
+        return []
+    out = []
+    for m in re.finditer(r'<url>\s*<loc>([^<]+)</loc>(?:\s*<lastmod>([^<]+)</lastmod>)?', sm):
+        loc, lm = m.group(1), (m.group(2) or "")
+        if pat and not re.search(pat, loc): continue
+        out.append((loc, lm))
+    return out
+
+def _mk_item(site, site_url, title, author, video, image, link, lastmod, raw):
+    ts = None
+    if lastmod:
+        try: ts = int(datetime.datetime.strptime(lastmod[:10], "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc).timestamp())
+        except Exception: ts = None
+    it = {
+        "site": site, "siteUrl": site_url, "source": (["Video"] if video else []),
+        "title": title, "author": author,
+        "video": video or "", "image": image or "",
+        "link": link,
+        "detail": {"kind":"","tags":[],"text":raw or title,
+                   "meta":[["Source", site_url.replace("https://","")],
+                           ["Date", lastmod[:10] if lastmod else ""]],"md":""},
+        "ts": ts, "uid": link, "fetched": TODAY.isoformat(),
+    }
+    it["cats"] = classify(it)
+    return it
+
+def _parallel(worker, items, max_workers=12):
+    out = []
+    if not items: return out
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for r in ex.map(worker, items):
+            if r: out.append(r)
+    return out
+
+def _slug(loc, idx=-1):
+    return loc.rstrip('/').split('/')[idx]
+
+def fetch_landing(cap=150):
+    entries = _sitemap_entries("https://www.landing.love/sitemap.xml", r'/sites/[^/]+/')
+    entries.sort(key=lambda e: e[1], reverse=True)
+    entries = entries[:cap]
+    def one(e):
+        loc, lm = e
+        try: h = fetch_url(loc, timeout=25)
+        except Exception: return None
+        slug = _slug(loc)
+        raw = _page_title(h, slug)
+        title = _clean_title(raw, [" - landing.love"," \u2013 landing.love"," | landing.love"," - Landing Love"])
+        image = _og(h, "image")
+        video = _mp4(h, slug=slug, domain=r'cdn\.landing\.love')
+        return _mk_item("landing.love","https://www.landing.love",title,title,video,image,loc,lm,raw)
+    return _parallel(one, entries)
+
+def fetch_saaspo(cap=150):
+    entries = _sitemap_entries("https://saaspo.com/sitemap.xml", r'/pages/')
+    entries = entries[:cap]
+    def one(e):
+        loc, lm = e
+        try: h = fetch_url(loc, timeout=25)
+        except Exception: return None
+        slug = _slug(loc)
+        raw = _page_title(h, slug)
+        title = re.sub(r'^\s*Saaspo\s*\|\s*', '', raw).strip() or raw
+        title = _clean_title(title, [" | SaaSpo"," - SaaSpo"," | Saaspo"])
+        image = _og(h, "image")
+        return _mk_item("saaspo.com","https://saaspo.com",title,title,"",image,loc,lm,raw)
+    return _parallel(one, entries)
+
+def fetch_rebrand(cap=120):
+    entries = _sitemap_entries("https://rebrand.gallery/sitemap.xml", r'/rebrand/')
+    entries.sort(key=lambda e: e[1], reverse=True)
+    entries = entries[:cap]
+    def one(e):
+        loc, lm = e
+        try: h = fetch_url(loc, timeout=25)
+        except Exception: return None
+        slug = _slug(loc)
+        raw = _page_title(h, slug)
+        title = _clean_title(raw, [" \u2014 Rebrand"," - Rebrand"," \u2013 Rebrand"])
+        image = _og(h, "image")
+        video = _mp4(h, slug=slug, domain=r'cdn\.rebrand\.gallery')
+        return _mk_item("rebrand.gallery","https://rebrand.gallery",title,title,video,image,loc,lm,raw)
+    return _parallel(one, entries)
+
+def fetch_navbar(cap=120):
+    entries = _sitemap_entries("https://www.navbar.gallery/sitemap.xml", r'/navbar/')
+    entries = entries[:cap]
+    def one(e):
+        loc, lm = e
+        try: h = fetch_url(loc, timeout=25)
+        except Exception: return None
+        slug = _slug(loc)
+        raw = _page_title(h, slug)
+        title = _clean_title(raw, [" \u2013 Navbar Gallery"," - Navbar Gallery"," | Navbar Gallery"])
+        image = _og(h, "image")
+        return _mk_item("navbar.gallery","https://www.navbar.gallery",title,title,"",image,loc,lm,raw)
+    return _parallel(one, entries)
+
+def fetch_cta(cap=120):
+    entries = _sitemap_entries("https://www.cta.gallery/sitemap.xml", r'/cta/')
+    entries = entries[:cap]
+    def one(e):
+        loc, lm = e
+        try: h = fetch_url(loc, timeout=25)
+        except Exception: return None
+        slug = _slug(loc)
+        raw = _page_title(h, slug)
+        title = _clean_title(raw, [" | Call-to-Action Design Inspiration"," - Call-to-Action Design Inspiration"])
+        image = _og(h, "image")
+        return _mk_item("cta.gallery","https://www.cta.gallery",title,title,"",image,loc,lm,raw)
+    return _parallel(one, entries)
+
+def fetch_curated(cap=120):
+    try:
+        idx = fetch_url("https://curated.design/sitemap-index.xml", timeout=30)
+    except Exception:
+        return []
+    subs = re.findall(r'<loc>([^<]*sitemap-content[^<]*)</loc>', idx)
+    sm = ""
+    for s in subs:
+        try: sm = fetch_url(s, timeout=30)
+        except Exception: sm = ""
+        if sm: break
+    if not sm: return []
+    entries = [(m.group(1), m.group(2) or "") for m in re.finditer(r'<url>\s*<loc>([^<]+)</loc>(?:\s*<lastmod>([^<]+)</lastmod>)?', sm) if '/sites/s/' in m.group(1)]
+    def keyf(e):
+        loc, lm = e
+        sid = re.search(r'/sites/s/(\d+)', loc)
+        return (lm, int(sid.group(1)) if sid else 0)
+    entries.sort(key=keyf, reverse=True)
+    entries = entries[:cap]
+    def one(e):
+        loc, lm = e
+        try: h = fetch_url(loc, timeout=25)
+        except Exception: return None
+        slug = _slug(loc)
+        raw = _page_title(h, slug)
+        title = _clean_title(raw, [" \u2014 Website inspiration | Curated"," - Website inspiration | Curated"," | Curated"])
+        image = _og(h, "image")
+        video = _mp4(h, domain=r'marketstorage\.b-cdn\.net')
+        return _mk_item("curated.design","https://curated.design",title,title,video,image,loc,lm,raw)
+    return _parallel(one, entries)
+
 # ---------- 读取现有 HTML 的 others（保留） ----------
 def load_others():
     s=open(DASH,encoding="utf-8").read()
@@ -305,7 +484,8 @@ def load_others():
                 if depth==0: j+=1;break
         j+=1
     data=json.loads(s[k:j])
-    LIVE=("bestdesignsonx","styles.refero","posts.design","motionsites","recent.design")
+    LIVE=("bestdesignsonx","styles.refero","posts.design","motionsites","recent.design",
+          "landing.love","saaspo.com","rebrand.gallery","navbar.gallery","cta.gallery","curated.design")
     existing={site:[] for site in LIVE}  # 兜底：保留文件内同站已有数据
     others=[]
     for it in data:
@@ -336,16 +516,23 @@ def run_refresh(days=None, auto_expand=True):
     log.append(f"motionsites {len(motionsites)} 条")
     recents=fetch_recent()
     log.append(f"recents {len(recents)} 条")
+    landing=fetch_landing(); log.append(f"landing {len(landing)} 条")
+    saaspo=fetch_saaspo(); log.append(f"saaspo {len(saaspo)} 条")
+    rebrand=fetch_rebrand(); log.append(f"rebrand {len(rebrand)} 条")
+    navbar=fetch_navbar(); log.append(f"navbar {len(navbar)} 条")
+    cta=fetch_cta(); log.append(f"cta {len(cta)} 条")
+    curated=fetch_curated(); log.append(f"curated {len(curated)} 条")
     s,k,j,others,existing=load_others()
     log.append(f"others 保留 {len(others)} 条")
 
     # 安全回退：某源抓空时，保留文件里同站的已有数据，绝不留白
-    fresh={"bestdesignsonx":bdx,"styles.refero":refero,"posts.design":posts,"motionsites":motionsites,"recent.design":recents}
+    fresh={"bestdesignsonx":bdx,"styles.refero":refero,"posts.design":posts,"motionsites":motionsites,"recent.design":recents,
+           "landing.love":landing,"saaspo.com":saaspo,"rebrand.gallery":rebrand,"navbar.gallery":navbar,"cta.gallery":cta,"curated.design":curated}
     for site in fresh:
         if not fresh[site] and existing.get(site):
             log.append(f"⚠ {site} 抓取为空，回退保留文件中 {len(existing[site])} 条")
             fresh[site]=existing[site]
-    merged=others+fresh["bestdesignsonx"]+fresh["styles.refero"]+fresh["posts.design"]+fresh["motionsites"]+fresh["recent.design"]
+    merged=others+fresh["bestdesignsonx"]+fresh["styles.refero"]+fresh["posts.design"]+fresh["motionsites"]+fresh["recent.design"]+fresh["landing.love"]+fresh["saaspo.com"]+fresh["rebrand.gallery"]+fresh["navbar.gallery"]+fresh["cta.gallery"]+fresh["curated.design"]
     u=set();final=[]
     for it in merged:
         if it.get("uid") in u: continue
