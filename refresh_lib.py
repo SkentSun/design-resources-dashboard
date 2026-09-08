@@ -542,7 +542,35 @@ def run_refresh(days=None, auto_expand=True):
         if it.get("uid") in u: continue
         u.add(it.get("uid"));final.append(it)
     new_arr=json.dumps(final,ensure_ascii=False)
-    open(DASH,"w",encoding="utf-8").write(s[:k]+new_arr+s[j:])
+    # 原子写入：先写临时文件，回读校验 ITEMS 数量，通过才替换正式文件。
+    # 防止 CI 中写一半被打断导致线上 HTML 截断（ITEMS 数组未闭合 -> 整页损坏）。
+    MIN_ITEMS=600
+    import tempfile, os as _os
+    tmp=_os.path.join(WS, ".cache", "_refresh_tmp.html")
+    _os.makedirs(_os.path.dirname(tmp), exist_ok=True)
+    with open(tmp,"w",encoding="utf-8") as tf:
+        tf.write(s[:k]+new_arr+s[j:])
+    # 回读校验
+    try:
+        ts=open(tmp,encoding="utf-8").read()
+        ti=ts.index("const ITEMS"); tk=ts.index("[",ti); td=0; tj=tk; ti2=False; te=False
+        while tj<len(ts):
+            c=ts[tj]
+            if te: te=False;tj+=1;continue
+            if c=="\\": te=True;tj+=1;continue
+            if c=='"': ti2=not ti2;tj+=1;continue
+            if not ti2:
+                if c=="[": td+=1
+                elif c=="]":
+                    td-=1
+                    if td==0: tj+=1;break
+            tj+=1
+        cnt=len(json.loads(ts[tk:tj]))
+    except Exception as e:
+        raise RuntimeError(f"刷新结果校验失败（ITEMS 无法解析）: {e}")
+    if cnt < MIN_ITEMS:
+        raise RuntimeError(f"刷新结果条数过少（{cnt} < {MIN_ITEMS}），疑似抓取全部失败，拒绝写入以免破坏线上数据")
+    _os.replace(tmp, DASH)
     by_site=dict(Counter(i["site"] for i in final))
     vids=sum(1 for i in final if i.get("video"))
     return {"ok":True,"total":len(final),"videos":vids,"bySite":by_site,
