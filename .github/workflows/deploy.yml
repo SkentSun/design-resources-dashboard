@@ -16,13 +16,13 @@ on:
       - '.github/workflows/deploy.yml'
 
 permissions:
-  contents: write      # 把刷新后的 HTML 提交回仓库（用 GITHUB_TOKEN，不会触发新工作流，无死循环）
+  contents: read
   pages: write
   id-token: write
 
 concurrency:
   group: pages-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -35,12 +35,36 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Refresh data (fetch from all sources)
-        run: python refresh_lib.py
-
-      # 注意：不把刷新后的 HTML 提交回仓库。
-      # 工作流只需在本地重新生成 HTML，并作为 Pages 产物上传部署即可；
-      # 回写仓库会触发额外 push（非快进冲突 + 出口代理限制），且无必要。
+      - name: Refresh data (safe fallback to committed file on failure)
+        run: |
+          python refresh_lib.py && echo "REFRESH_OK" || echo "REFRESH_FAILED"
+          # 校验产物：能解析且条数 >= 600 才部署；否则回退到已提交的完整文件，
+          # 防止刷新抓取全部失败 / 写一半被打断时把坏版本部署上线。
+          python - <<'PY'
+          import re, json, subprocess
+          s = open('design-resources-dashboard.html', encoding='utf-8').read()
+          try:
+              i = s.index('const ITEMS'); k = s.index('[', i); d = 0; j = k
+              ins = False; e = False
+              while j < len(s):
+                  c = s[j]
+                  if e: e = False; j += 1; continue
+                  if c == '\\': e = True; j += 1; continue
+                  if c == '"': ins = not ins; j += 1; continue
+                  if not ins:
+                      if c == '[': d += 1
+                      elif c == ']':
+                          d -= 1
+                          if d == 0: j += 1; break
+                  j += 1
+              n = len(json.loads(s[k:j]))
+          except Exception:
+              n = -1
+          if n < 600:
+              print(f"产物无效（{n} 条），回退到已提交的完整文件")
+              subprocess.run(['git', 'checkout', '--', 'design-resources-dashboard.html'], check=True)
+          else:
+              print(f"产物有效，共 {n} 条")
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
